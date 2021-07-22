@@ -89,31 +89,35 @@ def postProcess():
         directory = path.rsplit('/', 1)[0]+'/'
         subprocess.run(postProcessingCommand.split() + [path, filename, directory, model, gender])
 
-def getOnlineModels():
+def getOnlineModels(offset=0):
     online = []
-    #client = requests.session()
-    #client.get('http://www.chaturbate.com/login/')
-    #csrftoken = client.cookies['csrftoken']
+    for gender in genders:
+        try:
+            data = {"wm": "Hh8qq", "client_ip": "4.4.4.4", "limit": "500","gender": "f", "offset": offset}
+            result = requests.post("http://chaturbate.com/api/public/affiliates/onlinerooms/", params=data, timeout=15).text
+            li = open('list.txt', 'a')
+            li.write(result)
 
-    data = {"wm": "Hh8qq", "client_ip": "4.4.4.4"}                   
-    headers = {
-        "Connection": "keep-alive",
-     "Origin": "https://www.chaturbate.com",
-    "X-Requested-With": "XMLHttpRequest",
-    "User-Agent": "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/536.5 (KHTML, like Gecko) Chrome/19.0.1084.52 Safari/536.5",
-    "Content-Type": "application/json",
-    "Accept": "*/*",
-    "Referer": "https://www.chaturbate.com/data/mult.aspx",
-"User-Agent" :"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:91.0) Gecko/20100101 Firefox/91.0"}
-    result = requests.post("http://chaturbate.com/api/public/affiliates/onlinerooms/", params=data, headers = headers).text
-     
-    result = json.loads(result)
-    #print (  result )        
-    length = len(result['results'])
-            
-    online.extend([m['username'] for m in result['results']])
-    #data['key'] = result['key']
-            
+            result = json.loads(result)
+            length = len(result['results'])
+            print(offset)
+            online.extend([m['username'] for m in result['results']])
+            #data['key'] = result['key']
+            #print (result['key'])
+       
+
+            #while length == 500:
+            #    offset = offset + 500
+            #    if offset >= result['count']:
+            #     offset = 0
+        except json.decoder.JSONDecodeError:
+            break
+        except (requests.exceptions.ReadTimeout,requests.exceptions.ConnectionError):pass
+    f = open("record.txt", 'r')
+    reco =  list(set(f.readlines()))
+    reco = [m.strip('\n').split('chaturbate.com/')[-1].lower().strip().replace('/', '') for m in reco]
+    f.close()
+    online.extend([m for m in reco])
     f = open(wishlist, 'r')
     wanted =  list(set(f.readlines()))
     wanted = [m.strip('\n').split('chaturbate.com/')[-1].lower().strip().replace('/', '') for m in wanted]
@@ -144,6 +148,7 @@ if __name__ == '__main__':
         print( now(),"{} model(s) are being recorded. Getting list of online models now".format(len(recording)))
         sys.stdout.write("\033[K")
         print("the following models are being recorded: {}".format(recording), end="\r")
+        open("list.txt", 'w').close()
         getOnlineModels()
         sys.stdout.write("\033[F")
         for i in range(interval, 0, -1):
