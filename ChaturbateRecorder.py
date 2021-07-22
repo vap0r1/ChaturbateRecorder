@@ -1,6 +1,7 @@
-import time, datetime, os, sys, requests, configparser, re, subprocess
+import time, datetime, os, sys, requests, configparser, re, subprocess, json
 if os.name == 'nt':
     import ctypes
+
     kernel32 = ctypes.windll.kernel32
     kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 7)
 from queue import Queue
@@ -25,13 +26,13 @@ def now():
     return '[' + datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S") + ']'
 
 recording = []
-wanted = []
 
 def startRecording(model):
     global postProcessingCommand
     global processingQueue
     try:
-        result = requests.get('https://chaturbate.com/api/chatvideocontext/{}/'.format(model)).json()
+        result = requests.get('https://chaturbate.com/api/chatvideocontext/{}/'.format(model)).text
+        result = json.loads(result)
         session = Livestreamer()
         session.set_option('http-headers', "referer=https://www.chaturbate.com/{}".format(model))
         streams = session.streams("hlsvariant://{}".format(result['hls_source'].rsplit('?')[0]))
@@ -46,30 +47,34 @@ def startRecording(model):
         directory = filePath.rsplit('/', 1)[0]+'/'
         if not os.path.exists(directory):
             os.makedirs(directory)
-        if model in recording: return
         with open(filePath, 'wb') as f:
             recording.append(model)
-            while model in wanted:
+            while True:
                 try:
                     data = fd.read(1024)
                     f.write(data)
                 except:
                     f.close()
-                    break
-        if postProcessingCommand:
-            processingQueue.put({'model':model, 'path':filePath, 'gender':gender})
-        elif completed_directory:
-            finishedDir = completed_directory.format(path=save_directory, model=model,
-                        gender=gender, seconds=now.strftime("%S"),
-                        minutes=now.strftime("%M"),hour=now.strftime("%H"), day=now.strftime("%d"),
-                        month=now.strftime("%m"), year=now.strftime("%Y"))
+                    recording.remove(model)
+                    if postProcessingCommand != "":
+                        processingQueue.put({'model':model, 'path':filePath, 'gender':gender})
+                    elif completed_directory != "":
+                        finishedDir = completed_directory.format(path=save_directory, model=model,
+                                                                 gender=gender, seconds=now.strftime("%S"),
+                                                                 minutes=now.strftime("%M"),
+                                                                 hour=now.strftime("%H"), day=now.strftime("%d"),
+                                                                 month=now.strftime("%m"), year=now.strftime("%Y"))
 
-            if not os.path.exists(finishedDir):
-                os.makedirs(finishedDir)
-            os.rename(filePath, finishedDir+'/'+filePath.rsplit['/',1][0])
-    except: pass
-    finally:
-        if model in recording:recording.remove(model)
+                        if not os.path.exists(finishedDir):
+                            os.makedirs(finishedDir)
+                        os.rename(filePath, finishedDir+'/'+filePath.rsplit['/',1][0])
+                    return
+
+        if model in recording:
+            recording.remove(model)
+    except:
+        if model in recording:
+            recording.remove(model)
 def postProcess():
     global processingQueue
     global postProcessingCommand
@@ -86,28 +91,33 @@ def postProcess():
 
 def getOnlineModels():
     online = []
-    global wanted
-    for gender in genders:
-        try:
-            data = {'categories': gender, 'num': 127}
-            result = requests.post("https://roomlister.stream.highwebmedia.com/session/start/", data=data).json()
-            length = len(result['rooms'])
-            online.extend([m['username'].lower() for m in result['rooms']])
-            data['key'] = result['key']
-            while length == 127:
-                result = requests.post("https://roomlister.stream.highwebmedia.com/session/next/", data=data).json()
-                length = len(result['rooms'])
-                data['key'] = result['key']
-                online.extend([m['username'].lower() for m in result['rooms']])
-        except:
-            break
+    #client = requests.session()
+    #client.get('http://www.chaturbate.com/login/')
+    #csrftoken = client.cookies['csrftoken']
+
+    data = {"wm": "Hh8qq", "client_ip": "4.4.4.4"}                   
+    headers = {
+        "Connection": "keep-alive",
+     "Origin": "https://www.chaturbate.com",
+    "X-Requested-With": "XMLHttpRequest",
+    "User-Agent": "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/536.5 (KHTML, like Gecko) Chrome/19.0.1084.52 Safari/536.5",
+    "Content-Type": "application/json",
+    "Accept": "*/*",
+    "Referer": "https://www.chaturbate.com/data/mult.aspx",
+"User-Agent" :"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:91.0) Gecko/20100101 Firefox/91.0"}
+    result = requests.post("http://chaturbate.com/api/public/affiliates/onlinerooms/", params=data, headers = headers).text
+     
+    result = json.loads(result)
+    #print (  result )        
+    length = len(result['results'])
+            
+    online.extend([m['username'] for m in result['results']])
+    #data['key'] = result['key']
+            
     f = open(wishlist, 'r')
     wanted =  list(set(f.readlines()))
     wanted = [m.strip('\n').split('chaturbate.com/')[-1].lower().strip().replace('/', '') for m in wanted]
-    #wantedModels = list(set(wanted).intersection(online).difference(recording))
-    '''new method for building list - testing issue #19 yet again'''
-    wantedModels = [m for m in (list(set(wanted))) if m in online and m not in recording]
-    for theModel in wantedModels:
+    for theModel in list(set(list(set(wanted).intersection(online))).difference(recording)):
             thread = Thread(target=startRecording, args=(theModel,))
             thread.start()
     f.close()
